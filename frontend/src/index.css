@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 97%;
+    --foreground: 0 0% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+
+    --primary: 0 72% 30%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 60% 45%;
+    --secondary-foreground: 0 0% 100%;
+
+    --muted: 0 5% 92%;
+    --muted-foreground: 0 5% 45%;
+
+    --accent: 0 72% 30%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 10% 88%;
+    --input: 0 10% 88%;
+    --ring: 0 72% 30%;
+
+    --radius: 0.5rem;
+
+    --sidebar-background: 0 72% 25%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 0 0% 100%;
+    --sidebar-primary-foreground: 0 72% 30%;
+    --sidebar-accent: 0 60% 35%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 0 50% 35%;
+    --sidebar-ring: 0 0% 100%;
+
+    --success: 145 60% 40%;
+    --success-foreground: 0 0% 100%;
+    --warning: 35 90% 55%;
+    --warning-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    background-image: url('/images/bg-estoque.png');
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: 40%;
+    background-attachment: fixed;
+    background-blend-mode: soft-light;
+  }
+}
