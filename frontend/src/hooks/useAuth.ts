@@ -21,8 +21,14 @@ export function useAuth() {
     }
     api
       .get<AuthUser>("/auth/me")
-      .then((u) => setUser(u))
-      .catch(() => clearToken())
+      .then((u) => {
+        setUser(u);
+      })
+      .catch(() => {
+        // Se o token for inválido ou expirar, limpa tudo
+        clearToken();
+        setUser(null);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -52,9 +58,14 @@ export function useAuth() {
     []
   );
 
+  // Função de Logout Otimizada
   const signOut = useCallback(() => {
-    clearToken();
-    setUser(null);
+    clearToken(); // Remove o token do localStorage/Cookies
+    setUser(null); // Reseta o estado do React imediatamente
+    
+    // O pulo do gato: Força o redirecionamento limpando o estado da aba
+    // Isso evita que o usuário precise dar F5 para "perceber" que saiu.
+    window.location.href = "/login"; 
   }, []);
 
   return {
@@ -63,6 +74,8 @@ export function useAuth() {
     signIn,
     signUp,
     signOut,
+    // Helper para facilitar o uso no Dashboard
+    isAuthenticated: !!user,
     fullName: user?.full_name ?? null,
   };
 }
