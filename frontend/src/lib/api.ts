@@ -1,7 +1,7 @@
 // Cliente REST para a API do Cloudflare Worker
 // Substitui completamente o @supabase/supabase-js
 
-const BASE_URL = import.meta.env.VITE_API_URL ?? "";
+const BASE_URL = "https://estoque-cvilmap-cloud-bruna.cvilmap-cloud-bruna.workers.dev";
 
 const TOKEN_KEY = "estoque_token";
 
