@@ -2,9 +2,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
 // ── Intervalo de polling para dados em tempo real ──────────────
-// Queries de estoque, retiradas e reposições atualizam a cada 10s.
-// Queries estáticas (categorias, obras, funcionários, aplicações)
-// NÃO fazem polling — mudam raramente e não justificam o custo.
 const POLL_INTERVAL = 10_000;
 
 // ── Types ──────────────────────────────────────────────────────
@@ -22,7 +19,6 @@ export type StockItem = {
   created_at: string;
   updated_at: string;
   category_name?: string | null;
-  // compatibilidade com componentes que usam categories.name
   categories?: { name: string } | null;
 };
 
@@ -41,11 +37,9 @@ export type WithdrawalWithItem = {
   obra_id: string | null;
   user_email: string | null;
   created_at: string;
-  // campos JOIN
   item_code?: string;
   item_name?: string;
   obra_name?: string | null;
-  // compatibilidade com componentes que usam objetos aninhados
   stock_items?: { item_code: string; item_name: string } | null;
   obras?: { obra_name: string } | null;
 };
@@ -61,7 +55,16 @@ export type Replenishment = {
   stock_items?: { item_code: string; item_name: string } | null;
 };
 
-// Normaliza resposta flat da API para a forma aninhada esperada pelos componentes
+// ── Guard — evita o ".map is not a function" ───────────────────
+// Quando a API retorna null, {} ou qualquer não-array (por falha
+// de rede, timeout ou erro silencioso), esta função garante que
+// o resultado é sempre um array seguro antes do .map().
+function ensureArray<T>(data: unknown): T[] {
+  return Array.isArray(data) ? (data as T[]) : [];
+}
+
+// ── Normalizadores ─────────────────────────────────────────────
+
 function normalizeWithdrawal(w: WithdrawalWithItem): WithdrawalWithItem {
   return {
     ...w,
@@ -91,7 +94,7 @@ export function useStockItems() {
     queryKey: ["stock_items"],
     queryFn: async () => {
       const data = await api.get<StockItem[]>("/api/items");
-      return data.map(normalizeStockItem);
+      return ensureArray<StockItem>(data).map(normalizeStockItem);
     },
     refetchInterval: POLL_INTERVAL,
   });
@@ -127,7 +130,12 @@ export function useDeleteStockItem() {
 export function useWithdrawalTotals() {
   return useQuery({
     queryKey: ["withdrawal_totals"],
-    queryFn: () => api.get<Record<string, number>>("/api/withdrawal-totals"),
+    queryFn: async () => {
+      const data = await api.get<Record<string, number>>("/api/withdrawal-totals");
+      return (data && typeof data === "object" && !Array.isArray(data))
+        ? data as Record<string, number>
+        : {} as Record<string, number>;
+    },
     refetchInterval: POLL_INTERVAL,
   });
 }
@@ -139,7 +147,7 @@ export function useWithdrawals() {
     queryKey: ["withdrawals"],
     queryFn: async () => {
       const data = await api.get<WithdrawalWithItem[]>("/api/withdrawals");
-      return data.map(normalizeWithdrawal);
+      return ensureArray<WithdrawalWithItem>(data).map(normalizeWithdrawal);
     },
     refetchInterval: POLL_INTERVAL,
   });
@@ -198,12 +206,12 @@ export function useBulkDeleteWithdrawals() {
   });
 }
 
-// ── Obras — sem polling (dado estático) ───────────────────────
+// ── Obras — sem polling ────────────────────────────────────────
 
 export function useObras() {
   return useQuery({
     queryKey: ["obras"],
-    queryFn: () => api.get<Obra[]>("/api/obras"),
+    queryFn: async () => ensureArray<Obra>(await api.get<Obra[]>("/api/obras")),
   });
 }
 
@@ -240,7 +248,7 @@ export function useReplenishments() {
     queryKey: ["replenishments"],
     queryFn: async () => {
       const data = await api.get<Replenishment[]>("/api/replenishments");
-      return data.map(normalizeReplenishment);
+      return ensureArray<Replenishment>(data).map(normalizeReplenishment);
     },
     refetchInterval: POLL_INTERVAL,
   });
@@ -262,16 +270,9 @@ export function useUpdateReplenishment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      id,
-      quantity,
-      item_id,
-      oldQuantity,
-    }: {
-      id: string;
-      quantity: number;
-      item_id: string;
-      oldQuantity: number;
-    }) => api.put(`/api/replenishments/${id}`, { quantity, item_id, old_quantity: oldQuantity }),
+      id, quantity, item_id, oldQuantity,
+    }: { id: string; quantity: number; item_id: string; oldQuantity: number }) =>
+      api.put(`/api/replenishments/${id}`, { quantity, item_id, old_quantity: oldQuantity }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["replenishments"] });
       qc.invalidateQueries({ queryKey: ["stock_items"] });
@@ -303,12 +304,12 @@ export function useBulkDeleteReplenishments() {
   });
 }
 
-// ── Applications — sem polling (dado estático) ────────────────
+// ── Applications — sem polling ─────────────────────────────────
 
 export function useApplications() {
   return useQuery({
     queryKey: ["applications"],
-    queryFn: () => api.get<Application[]>("/api/applications"),
+    queryFn: async () => ensureArray<Application>(await api.get<Application[]>("/api/applications")),
   });
 }
 
@@ -328,12 +329,12 @@ export function useDeleteApplication() {
   });
 }
 
-// ── Employees — sem polling (dado estático) ───────────────────
+// ── Employees — sem polling ────────────────────────────────────
 
 export function useEmployees() {
   return useQuery({
     queryKey: ["employees"],
-    queryFn: () => api.get<Employee[]>("/api/employees"),
+    queryFn: async () => ensureArray<Employee>(await api.get<Employee[]>("/api/employees")),
   });
 }
 
@@ -363,12 +364,12 @@ export function useDeleteEmployee() {
   });
 }
 
-// ── Categories — sem polling (dado estático) ──────────────────
+// ── Categories — sem polling ───────────────────────────────────
 
 export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
-    queryFn: () => api.get<Category[]>("/api/categories"),
+    queryFn: async () => ensureArray<Category>(await api.get<Category[]>("/api/categories")),
   });
 }
 
