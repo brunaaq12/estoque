@@ -36,10 +36,23 @@ async function request<T>(
     throw new Error("Sessão expirada");
   }
 
-  const data = await res.json().catch(() => ({}));
+  // Tenta fazer parse do JSON.
+  // O catch anterior retornava {} silenciosamente — isso causava o erro
+  // ".map is not a function" porque os hooks esperavam arrays.
+  let data: unknown;
+  try {
+    data = await res.json();
+  } catch {
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} — resposta inválida do servidor`);
+    }
+    // Resposta ok mas sem corpo (ex: 204 No Content)
+    return null as T;
+  }
 
   if (!res.ok) {
-    throw new Error((data as { error?: string }).error ?? `HTTP ${res.status}`);
+    const errData = data as { error?: string };
+    throw new Error(errData?.error ?? `HTTP ${res.status}`);
   }
 
   return data as T;
