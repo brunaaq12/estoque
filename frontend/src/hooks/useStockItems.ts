@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
+// ── Intervalo de polling para dados em tempo real ──────────────
+// Queries de estoque, retiradas e reposições atualizam a cada 10s.
+// Queries estáticas (categorias, obras, funcionários, aplicações)
+// NÃO fazem polling — mudam raramente e não justificam o custo.
+const POLL_INTERVAL = 10_000;
+
 // ── Types ──────────────────────────────────────────────────────
 
 export type StockItem = {
@@ -78,7 +84,7 @@ function normalizeStockItem(s: StockItem): StockItem {
   };
 }
 
-// ── Stock Items ────────────────────────────────────────────────
+// ── Stock Items — polling ativo ────────────────────────────────
 
 export function useStockItems() {
   return useQuery({
@@ -87,6 +93,7 @@ export function useStockItems() {
       const data = await api.get<StockItem[]>("/api/items");
       return data.map(normalizeStockItem);
     },
+    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -115,16 +122,17 @@ export function useDeleteStockItem() {
   });
 }
 
-// ── Withdrawal totals ──────────────────────────────────────────
+// ── Withdrawal totals — polling ativo ─────────────────────────
 
 export function useWithdrawalTotals() {
   return useQuery({
     queryKey: ["withdrawal_totals"],
     queryFn: () => api.get<Record<string, number>>("/api/withdrawal-totals"),
+    refetchInterval: POLL_INTERVAL,
   });
 }
 
-// ── Withdrawals ────────────────────────────────────────────────
+// ── Withdrawals — polling ativo ────────────────────────────────
 
 export function useWithdrawals() {
   return useQuery({
@@ -133,6 +141,7 @@ export function useWithdrawals() {
       const data = await api.get<WithdrawalWithItem[]>("/api/withdrawals");
       return data.map(normalizeWithdrawal);
     },
+    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -189,7 +198,7 @@ export function useBulkDeleteWithdrawals() {
   });
 }
 
-// ── Obras ──────────────────────────────────────────────────────
+// ── Obras — sem polling (dado estático) ───────────────────────
 
 export function useObras() {
   return useQuery({
@@ -224,7 +233,7 @@ export function useDeleteObra() {
   });
 }
 
-// ── Replenishments ─────────────────────────────────────────────
+// ── Replenishments — polling ativo ────────────────────────────
 
 export function useReplenishments() {
   return useQuery({
@@ -233,6 +242,7 @@ export function useReplenishments() {
       const data = await api.get<Replenishment[]>("/api/replenishments");
       return data.map(normalizeReplenishment);
     },
+    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -293,7 +303,7 @@ export function useBulkDeleteReplenishments() {
   });
 }
 
-// ── Applications ───────────────────────────────────────────────
+// ── Applications — sem polling (dado estático) ────────────────
 
 export function useApplications() {
   return useQuery({
@@ -318,7 +328,7 @@ export function useDeleteApplication() {
   });
 }
 
-// ── Employees ──────────────────────────────────────────────────
+// ── Employees — sem polling (dado estático) ───────────────────
 
 export function useEmployees() {
   return useQuery({
@@ -353,7 +363,7 @@ export function useDeleteEmployee() {
   });
 }
 
-// ── Categories ─────────────────────────────────────────────────
+// ── Categories — sem polling (dado estático) ──────────────────
 
 export function useCategories() {
   return useQuery({
