@@ -15,16 +15,7 @@ const App = () => {
     () =>
       new QueryClient({
         defaultOptions: {
-          queries: {
-            retry: 1,
-            // staleTime 0: dados são considerados desatualizados imediatamente,
-            // permitindo que o refetchInterval funcione sem atrasos.
-            staleTime: 0,
-            // Revalida quando o utilizador volta para a aba
-            refetchOnWindowFocus: true,
-            // Revalida quando a ligação à internet é restaurada
-            refetchOnReconnect: true,
-          },
+          queries: { retry: 1, staleTime: 30_000, refetchOnWindowFocus: true },
           mutations: { retry: 0 },
         },
       })
