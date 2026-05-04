@@ -1,9 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
-// ── Intervalo de polling para dados em tempo real ──────────────
-const POLL_INTERVAL = 10_000;
-
 // ── Types ──────────────────────────────────────────────────────
 
 export type StockItem = {
@@ -19,6 +16,7 @@ export type StockItem = {
   created_at: string;
   updated_at: string;
   category_name?: string | null;
+  // compatibilidade com componentes que usam categories.name
   categories?: { name: string } | null;
 };
 
@@ -37,9 +35,11 @@ export type WithdrawalWithItem = {
   obra_id: string | null;
   user_email: string | null;
   created_at: string;
+  // campos JOIN
   item_code?: string;
   item_name?: string;
   obra_name?: string | null;
+  // compatibilidade com componentes que usam objetos aninhados
   stock_items?: { item_code: string; item_name: string } | null;
   obras?: { obra_name: string } | null;
 };
@@ -55,16 +55,7 @@ export type Replenishment = {
   stock_items?: { item_code: string; item_name: string } | null;
 };
 
-// ── Guard — evita o ".map is not a function" ───────────────────
-// Quando a API retorna null, {} ou qualquer não-array (por falha
-// de rede, timeout ou erro silencioso), esta função garante que
-// o resultado é sempre um array seguro antes do .map().
-function ensureArray<T>(data: unknown): T[] {
-  return Array.isArray(data) ? (data as T[]) : [];
-}
-
-// ── Normalizadores ─────────────────────────────────────────────
-
+// Normaliza resposta flat da API para a forma aninhada esperada pelos componentes
 function normalizeWithdrawal(w: WithdrawalWithItem): WithdrawalWithItem {
   return {
     ...w,
@@ -87,16 +78,15 @@ function normalizeStockItem(s: StockItem): StockItem {
   };
 }
 
-// ── Stock Items — polling ativo ────────────────────────────────
+// ── Stock Items ────────────────────────────────────────────────
 
 export function useStockItems() {
   return useQuery({
     queryKey: ["stock_items"],
     queryFn: async () => {
       const data = await api.get<StockItem[]>("/api/items");
-      return ensureArray<StockItem>(data).map(normalizeStockItem);
+      return data.map(normalizeStockItem);
     },
-    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -125,31 +115,24 @@ export function useDeleteStockItem() {
   });
 }
 
-// ── Withdrawal totals — polling ativo ─────────────────────────
+// ── Withdrawal totals ──────────────────────────────────────────
 
 export function useWithdrawalTotals() {
   return useQuery({
     queryKey: ["withdrawal_totals"],
-    queryFn: async () => {
-      const data = await api.get<Record<string, number>>("/api/withdrawal-totals");
-      return (data && typeof data === "object" && !Array.isArray(data))
-        ? data as Record<string, number>
-        : {} as Record<string, number>;
-    },
-    refetchInterval: POLL_INTERVAL,
+    queryFn: () => api.get<Record<string, number>>("/api/withdrawal-totals"),
   });
 }
 
-// ── Withdrawals — polling ativo ────────────────────────────────
+// ── Withdrawals ────────────────────────────────────────────────
 
 export function useWithdrawals() {
   return useQuery({
     queryKey: ["withdrawals"],
     queryFn: async () => {
       const data = await api.get<WithdrawalWithItem[]>("/api/withdrawals");
-      return ensureArray<WithdrawalWithItem>(data).map(normalizeWithdrawal);
+      return data.map(normalizeWithdrawal);
     },
-    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -206,12 +189,12 @@ export function useBulkDeleteWithdrawals() {
   });
 }
 
-// ── Obras — sem polling ────────────────────────────────────────
+// ── Obras ──────────────────────────────────────────────────────
 
 export function useObras() {
   return useQuery({
     queryKey: ["obras"],
-    queryFn: async () => ensureArray<Obra>(await api.get<Obra[]>("/api/obras")),
+    queryFn: () => api.get<Obra[]>("/api/obras"),
   });
 }
 
@@ -241,16 +224,15 @@ export function useDeleteObra() {
   });
 }
 
-// ── Replenishments — polling ativo ────────────────────────────
+// ── Replenishments ─────────────────────────────────────────────
 
 export function useReplenishments() {
   return useQuery({
     queryKey: ["replenishments"],
     queryFn: async () => {
       const data = await api.get<Replenishment[]>("/api/replenishments");
-      return ensureArray<Replenishment>(data).map(normalizeReplenishment);
+      return data.map(normalizeReplenishment);
     },
-    refetchInterval: POLL_INTERVAL,
   });
 }
 
@@ -270,9 +252,16 @@ export function useUpdateReplenishment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
-      id, quantity, item_id, oldQuantity,
-    }: { id: string; quantity: number; item_id: string; oldQuantity: number }) =>
-      api.put(`/api/replenishments/${id}`, { quantity, item_id, old_quantity: oldQuantity }),
+      id,
+      quantity,
+      item_id,
+      oldQuantity,
+    }: {
+      id: string;
+      quantity: number;
+      item_id: string;
+      oldQuantity: number;
+    }) => api.put(`/api/replenishments/${id}`, { quantity, item_id, old_quantity: oldQuantity }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["replenishments"] });
       qc.invalidateQueries({ queryKey: ["stock_items"] });
@@ -304,12 +293,12 @@ export function useBulkDeleteReplenishments() {
   });
 }
 
-// ── Applications — sem polling ─────────────────────────────────
+// ── Applications ───────────────────────────────────────────────
 
 export function useApplications() {
   return useQuery({
     queryKey: ["applications"],
-    queryFn: async () => ensureArray<Application>(await api.get<Application[]>("/api/applications")),
+    queryFn: () => api.get<Application[]>("/api/applications"),
   });
 }
 
@@ -329,12 +318,12 @@ export function useDeleteApplication() {
   });
 }
 
-// ── Employees — sem polling ────────────────────────────────────
+// ── Employees ──────────────────────────────────────────────────
 
 export function useEmployees() {
   return useQuery({
     queryKey: ["employees"],
-    queryFn: async () => ensureArray<Employee>(await api.get<Employee[]>("/api/employees")),
+    queryFn: () => api.get<Employee[]>("/api/employees"),
   });
 }
 
@@ -364,12 +353,12 @@ export function useDeleteEmployee() {
   });
 }
 
-// ── Categories — sem polling ───────────────────────────────────
+// ── Categories ─────────────────────────────────────────────────
 
 export function useCategories() {
   return useQuery({
     queryKey: ["categories"],
-    queryFn: async () => ensureArray<Category>(await api.get<Category[]>("/api/categories")),
+    queryFn: () => api.get<Category[]>("/api/categories"),
   });
 }
 
