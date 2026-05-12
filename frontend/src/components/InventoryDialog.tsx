@@ -119,7 +119,7 @@ export default function InventoryDialog({ open, onOpenChange, items, totals, onU
     // 👇 Apaga as contagens do banco para os itens atualizados
     await Promise.all(
       updates.map((u) =>
-        api.delete(`/api/inventory/${u.item_id}`).catch(console.error)
+        api.delete(`/api/inventory/${u.id}`).catch(console.error)
       )
     );
 
