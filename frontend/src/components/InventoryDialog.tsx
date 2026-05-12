@@ -97,37 +97,47 @@ export default function InventoryDialog({ open, onOpenChange, items, totals, onU
   };
 
   const handleUpdateStock = async () => {
-    const updates: { id: string; quantity: number }[] = [];
-    for (const item of items) {
-      const val = physicalCounts[item.id];
-      if (val !== undefined && val !== "") {
-        const num = Number(val);
-        if (!isNaN(num) && num >= 0) {
-          const withdrawn = totals[item.id] || 0;
-          updates.push({ id: item.id, quantity: num + withdrawn });
-        }
+  const updates: { id: string; quantity: number }[] = [];
+  for (const item of items) {
+    const val = physicalCounts[item.id];
+    if (val !== undefined && val !== "") {
+      const num = Number(val);
+      if (!isNaN(num) && num >= 0) {
+        const withdrawn = totals[item.id] || 0;
+        updates.push({ id: item.id, quantity: num + withdrawn });
       }
     }
-    if (updates.length === 0) {
-      toast.error("Preencha ao menos um campo de contagem física.");
-      return;
-    }
-    try {
-      setSaving(true);
-      await onUpdateStock(updates);
-      setPhysicalCounts((prev) => {
-        const next = { ...prev };
-        updates.forEach((u) => delete next[u.id]);
-        return next;
-      });
-      toast.success(`Estoque atualizado para ${updates.length} item(ns)!`);
-      onOpenChange(false);
-    } catch {
-      toast.error("Erro ao atualizar estoque.");
-    } finally {
-      setSaving(false);
-    }
-  };
+  }
+  if (updates.length === 0) {
+    toast.error("Preencha ao menos um campo de contagem física.");
+    return;
+  }
+  try {
+    setSaving(true);
+    await onUpdateStock(updates);
+
+    // 👇 Apaga as contagens do banco para os itens atualizados
+    await Promise.all(
+      updates.map((u) =>
+        api.delete(`/api/inventory/${u.item_id}`).catch(console.error)
+      )
+    );
+
+    // 👇 Limpa o estado local
+    setPhysicalCounts((prev) => {
+      const next = { ...prev };
+      updates.forEach((u) => delete next[u.id]);
+      return next;
+    });
+
+    toast.success(`Estoque atualizado para ${updates.length} item(ns)!`);
+    onOpenChange(false);
+  } catch {
+    toast.error("Erro ao atualizar estoque.");
+  } finally {
+    setSaving(false);
+  }
+};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
