@@ -11,6 +11,7 @@ import { Search, Plus, Trash2, Package, Users, Pencil, Filter, FileDown, Clipboa
 import * as XLSX from "xlsx";
 import InventoryDialog from "./InventoryDialog";
 import { useQueryClient } from "@tanstack/react-query";
+import { parseDecimal, formatDecimal } from "@/lib/utils";
 
 const UNIT_OPTIONS = ["PÇ", "LITROS", "METROS", "UNIDADE", "KILOGRAMA", "CAIXA", "PCTE", "FRDO"];
 const SHELF_OPTIONS = Array.from({ length: 15 }, (_, i) => String(i + 1));
@@ -85,7 +86,7 @@ export default function StockControl() {
     else if (colorFilter === "green") matchColor = balance >= ideal;
 
     let matchQty = true;
-    if (qtyFilter.trim()) matchQty = i.quantity === parseInt(qtyFilter);
+    if (qtyFilter.trim()) matchQty = i.quantity === parseDecimal(qtyFilter);
 
     let matchCategory = true;
     if (categoryFilter !== "all") matchCategory = i.category_id === categoryFilter;
@@ -104,7 +105,7 @@ export default function StockControl() {
       return;
     }
     try {
-      await addItem.mutateAsync({ item_code: code, item_name: name.trim(), quantity: parseInt(qty), unit_measure: unit, shelf: shelf || null, ideal_stock: parseInt(idealStock) || 0, category_id: category || null, user_name: fullName || user?.email || null });
+      await addItem.mutateAsync({ item_code: code, item_name: name.trim(), quantity: parseDecimal(qty), unit_measure: unit, shelf: shelf || null, ideal_stock: parseInt(idealStock) || 0, category_id: category || null, user_name: fullName || user?.email || null });
       setCode(""); setName(""); setQty(""); setIdealStock(""); setUnit("PÇ"); setShelf(""); setCategory("");
       toast.success("Item adicionado!");
     } catch (e: any) {
@@ -125,7 +126,7 @@ export default function StockControl() {
     setEditId(item.id);
     setEditCode(item.item_code);
     setEditName(item.item_name);
-    setEditQty(String(item.quantity));
+    setEditQty(formatDecimal(item.quantity));
     setEditIdealStock(String(item.ideal_stock || 0));
     setEditUnit(item.unit_measure || "PÇ");
     setEditShelf(item.shelf || "");
@@ -140,7 +141,7 @@ export default function StockControl() {
       return;
     }
     try {
-      await updateItem.mutateAsync({ id: editId, item_code: editCode, item_name: editName.trim(), quantity: parseInt(editQty), ideal_stock: parseInt(editIdealStock) || 0, unit_measure: editUnit, shelf: editShelf || null, category_id: editCategory || null });
+      await updateItem.mutateAsync({ id: editId, item_code: editCode, item_name: editName.trim(), quantity: parseDecimal(editQty), ideal_stock: parseInt(editIdealStock) || 0, unit_measure: editUnit, shelf: editShelf || null, category_id: editCategory || null });
       setEditDialogOpen(false);
       toast.success("Item atualizado!");
     } catch {
@@ -257,7 +258,8 @@ export default function StockControl() {
         </div>
         <Input
           placeholder="Filtrar por qtd"
-          type="number"
+          type="text"
+          inputMode="decimal"
           value={qtyFilter}
           onChange={(e) => setQtyFilter(e.target.value)}
           className="w-32"
@@ -304,7 +306,7 @@ export default function StockControl() {
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Quantidade</label>
-          <Input placeholder="Qtd" type="number" value={qty} onChange={(e) => setQty(e.target.value)} className="w-24" />
+          <Input placeholder="Qtd" type="text" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} className="w-24" />
         </div>
         <div>
           <label className="text-xs text-muted-foreground">Est. Ideal</label>
@@ -381,12 +383,12 @@ export default function StockControl() {
                     <TableCell className="text-sm">{item.categories?.name || "—"}</TableCell>
                     <TableCell className="text-sm">{item.unit_measure || "PÇ"}</TableCell>
                     <TableCell className="text-sm">{item.shelf || "—"}</TableCell>
-                    <TableCell className="text-right">{item.quantity}</TableCell>
-                    <TableCell className="text-right">{withdrawn}</TableCell>
+                    <TableCell className="text-right">{formatDecimal(item.quantity)}</TableCell>
+                    <TableCell className="text-right">{formatDecimal(withdrawn)}</TableCell>
                     <TableCell className={`text-right font-bold ${balance <= 0 ? "text-destructive" : balance < (item.ideal_stock || 5) ? "text-orange-500" : "text-emerald-600"}`}>
-                      {balance}
+                      {formatDecimal(balance)}
                     </TableCell>
-                    <TableCell className="text-right">{item.ideal_stock || 0}</TableCell>
+                    <TableCell className="text-right">{formatDecimal(item.ideal_stock || 0)}</TableCell>
                     <TableCell className="text-muted-foreground text-xs">{item.user_name || "—"}</TableCell>
                     <TableCell className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEdit(item)} className="h-8 w-8 text-muted-foreground hover:text-primary">
@@ -411,7 +413,7 @@ export default function StockControl() {
           <div className="space-y-3 py-2">
             <Input placeholder="Código (00.0000)" value={editCode} onChange={(e) => setEditCode(formatCode(e.target.value))} maxLength={7} />
             <Input placeholder="Nome do item" value={editName} onChange={(e) => setEditName(e.target.value)} />
-            <Input placeholder="Quantidade" type="number" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
+            <Input placeholder="Quantidade" type="text" inputMode="decimal" value={editQty} onChange={(e) => setEditQty(e.target.value)} />
             <div>
               <label className="text-xs text-muted-foreground">Estoque Ideal</label>
               <Input placeholder="Estoque ideal" type="number" value={editIdealStock} onChange={(e) => setEditIdealStock(e.target.value)} />
