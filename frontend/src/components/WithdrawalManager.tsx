@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { Search, Plus, ClipboardList, Trash2, Building2, Wrench, Pencil, FileText, CalendarIcon } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { cn } from "@/lib/utils";
+import { cn, parseDecimal, formatDecimal } from "@/lib/utils";
 import * as XLSX from "xlsx";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
@@ -72,6 +72,7 @@ export default function WithdrawalManager() {
   const [editWApp, setEditWApp] = useState("");
   const [editWResp, setEditWResp] = useState("");
   const [editWObraId, setEditWObraId] = useState<string | null>(null);
+  const [editWDate, setEditWDate] = useState<Date | undefined>(undefined);
 
   // Report state
   const [reportDialogOpen, setReportDialogOpen] = useState(false);
@@ -103,7 +104,7 @@ export default function WithdrawalManager() {
     try {
       const result = await addWithdrawal.mutateAsync({
         item_id: selectedItemId,
-        quantity_withdrawn: parseInt(qty),
+        quantity_withdrawn: parseDecimal(qty),
         application: application.trim(),
         responsible: responsibleInput.trim(),
         obra_id: selectedObraId || undefined,
@@ -283,7 +284,7 @@ export default function WithdrawalManager() {
             </div>
           )}
         </div>
-        <Input placeholder="Qtd" type="number" value={qty} onChange={(e) => setQty(e.target.value)} className="w-20" />
+        <Input placeholder="Qtd" type="text" inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} className="w-20" />
         
         {/* Aplicação field with dropdown */}
         <div className="relative min-w-[120px] flex-1" ref={appRef}>
@@ -375,7 +376,7 @@ export default function WithdrawalManager() {
                   <TableCell>{w.stock_items?.item_name}</TableCell>
                   {editingWithdrawalId === w.id ? (
                     <>
-                      <TableCell><Input type="number" value={editWQty} onChange={(e) => setEditWQty(e.target.value)} className="w-20 h-8 text-sm" /></TableCell>
+                      <TableCell><Input type="text" inputMode="decimal" value={editWQty} onChange={(e) => setEditWQty(e.target.value)} className="w-20 h-8 text-sm" /></TableCell>
                       <TableCell>
                         <Select value={editWApp} onValueChange={setEditWApp}>
                           <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
@@ -402,18 +403,38 @@ export default function WithdrawalManager() {
                         </Select>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-xs">{w.user_email || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">{new Date(w.created_at).toLocaleDateString("pt-BR")}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" size="sm" className={cn("h-8 justify-start text-left font-normal text-xs px-2", !editWDate && "text-muted-foreground")}>
+                              <CalendarIcon className="mr-1 h-3 w-3" />
+                              {editWDate ? format(editWDate, "dd/MM/yyyy") : "Data"}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-0" align="start">
+                            <Calendar mode="single" selected={editWDate} onSelect={setEditWDate} locale={ptBR} initialFocus className={cn("p-3 pointer-events-auto")} />
+                          </PopoverContent>
+                        </Popover>
+                      </TableCell>
                       <TableCell className="text-muted-foreground text-sm">{new Date(w.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" onClick={async () => {
                             try {
+                              const original = new Date(w.created_at);
+                              let created_at: string | undefined = undefined;
+                              if (editWDate) {
+                                const combined = new Date(editWDate);
+                                combined.setHours(original.getHours(), original.getMinutes(), original.getSeconds(), original.getMilliseconds());
+                                created_at = combined.toISOString();
+                              }
                               await updateWithdrawal.mutateAsync({
                                 id: w.id,
-                                quantity_withdrawn: parseInt(editWQty),
+                                quantity_withdrawn: parseDecimal(editWQty),
                                 application: editWApp,
                                 responsible: editWResp,
                                 obra_id: editWObraId,
+                                ...(created_at ? { created_at } : {}),
                               });
                               setEditingWithdrawalId(null);
                               toast.success("Retirada atualizada!");
@@ -425,7 +446,7 @@ export default function WithdrawalManager() {
                     </>
                   ) : (
                     <>
-                      <TableCell className="text-right font-medium">{w.quantity_withdrawn}</TableCell>
+                      <TableCell className="text-right font-medium">{formatDecimal(w.quantity_withdrawn)}</TableCell>
                       <TableCell>{w.application}</TableCell>
                       <TableCell>{w.obras?.obra_name || "—"}</TableCell>
                       <TableCell>{w.responsible}</TableCell>
@@ -436,10 +457,11 @@ export default function WithdrawalManager() {
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-primary" onClick={() => {
                             setEditingWithdrawalId(w.id);
-                            setEditWQty(String(w.quantity_withdrawn));
+                            setEditWQty(formatDecimal(w.quantity_withdrawn));
                             setEditWApp(w.application);
                             setEditWResp(w.responsible);
                             setEditWObraId(w.obra_id);
+                            setEditWDate(new Date(w.created_at));
                           }}>
                             <Pencil className="h-4 w-4" />
                           </Button>
