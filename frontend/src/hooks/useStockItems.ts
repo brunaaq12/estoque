@@ -22,7 +22,7 @@ export type StockItem = {
 
 export type Category = { id: string; name: string; created_at: string };
 export type Obra = { id: string; obra_name: string; responsible: string; created_at: string };
-export type Employee = { id: string; employee_id: string; name: string; role: string; created_at: string };
+export type Employee = { id: string; employee_id: string; name: string; role: string; created_at: string; face_descriptor?: string | null };
 export type Application = { id: string; name: string; created_at: string };
 
 export type WithdrawalWithItem = {
@@ -349,6 +349,16 @@ export function useDeleteEmployee() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.delete(`/api/employees/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
+  });
+}
+
+// Cadastra/remove o Face ID (descritor facial) de um funcionário
+export function useUpdateEmployeeFace() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, face_descriptor }: { id: string; face_descriptor: string | null }) =>
+      api.put(`/api/employees/${id}/face`, { face_descriptor }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["employees"] }),
   });
 }
