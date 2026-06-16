@@ -1,14 +1,16 @@
 import { useState, useRef, useEffect } from "react";
-import { useStockItems, useUpdateStockItem, useAddWithdrawal, useEmployees, useApplications } from "@/hooks/useStockItems";
+import { useStockItems, useUpdateStockItem, useAddWithdrawal, useEmployees, useApplications, useUpdateEmployeeFace } from "@/hooks/useStockItems";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
-import { QrCode, Camera, Plus, Minus, Printer, Users } from "lucide-react";
+import { QrCode, Camera, Plus, Minus, Printer, Users, ScanFace, Fingerprint, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Html5Qrcode } from "html5-qrcode";
+import { parseDecimal } from "@/lib/utils";
+import { loadFaceModels, getFaceDescriptor, descriptorToString, findBestMatch } from "@/lib/faceRecognition";
 
 function formatCode(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(0, 6);
@@ -22,6 +24,7 @@ export default function QRCodeManager() {
   const { data: applications = [] } = useApplications();
   const updateItem = useUpdateStockItem();
   const addWithdrawal = useAddWithdrawal();
+  const updateEmployeeFace = useUpdateEmployeeFace();
 
   const [codeInput, setCodeInput] = useState("");
   const [nameInput, setNameInput] = useState("");
@@ -50,6 +53,34 @@ export default function QRCodeManager() {
   const [withdrawResponsible, setWithdrawResponsible] = useState("");
   const [withdrawApplication, setWithdrawApplication] = useState("");
   const [withdrawQty, setWithdrawQty] = useState("1");
+  // Quando true, o item da retirada também precisa ser escolhido (fluxo Face ID)
+  const [withdrawNeedsItem, setWithdrawNeedsItem] = useState(false);
+  const [withdrawItemId, setWithdrawItemId] = useState("");
+
+  // Face ID — cadastro
+  const [faceEnrollDialogOpen, setFaceEnrollDialogOpen] = useState(false);
+  const [faceEnrollEmpId, setFaceEnrollEmpId] = useState("");
+  const [faceEnrollCapturing, setFaceEnrollCapturing] = useState(false);
+  const [faceEnrollLoading, setFaceEnrollLoading] = useState(false);
+  const faceEnrollVideoRef = useRef<HTMLVideoElement | null>(null);
+  const faceEnrollStreamRef = useRef<MediaStream | null>(null);
+
+  // Face ID — leitura
+  const [faceScanning, setFaceScanning] = useState(false);
+  const [faceScanLoading, setFaceScanLoading] = useState(false);
+  const faceScanVideoRef = useRef<HTMLVideoElement | null>(null);
+  const faceScanStreamRef = useRef<MediaStream | null>(null);
+  const faceScanIntervalRef = useRef<number | null>(null);
+  const [matchedEmployee, setMatchedEmployee] = useState<{ id: string; employee_id: string; name: string } | null>(null);
+
+  // Face ID — diálogo de identificação integrado ao fluxo de retirada por QR
+  const [faceWithdrawDialogOpen, setFaceWithdrawDialogOpen] = useState(false);
+  const [faceWithdrawScanning, setFaceWithdrawScanning] = useState(false);
+  const [faceWithdrawLoading, setFaceWithdrawLoading] = useState(false);
+  const [faceWithdrawError, setFaceWithdrawError] = useState("");
+  const faceWithdrawVideoRef = useRef<HTMLVideoElement | null>(null);
+  const faceWithdrawStreamRef = useRef<MediaStream | null>(null);
+  const faceWithdrawIntervalRef = useRef<number | null>(null);
 
   const selectedItem = items.find((i) => i.id === selectedItemId);
   const selectedEmp = employees.find((e) => e.id === selectedEmpId);
@@ -201,8 +232,182 @@ export default function QRCodeManager() {
   };
 
   useEffect(() => {
-    return () => { stopScanner(); };
+    return () => { stopScanner(); stopFaceEnroll(); stopFaceScan(); stopFaceWithdraw(); };
   }, []);
+
+  // ── Face ID — identificação inline na retirada por QR ──────
+
+  const startFaceWithdraw = async () => {
+    setFaceWithdrawError("");
+    setFaceWithdrawLoading(true);
+    try {
+      await loadFaceModels();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      faceWithdrawStreamRef.current = stream;
+      setFaceWithdrawScanning(true);
+      setTimeout(() => {
+        if (faceWithdrawVideoRef.current) {
+          faceWithdrawVideoRef.current.srcObject = stream;
+          faceWithdrawVideoRef.current.play().catch(() => {});
+        }
+        faceWithdrawIntervalRef.current = window.setInterval(async () => {
+          if (!faceWithdrawVideoRef.current) return;
+          const descriptor = await getFaceDescriptor(faceWithdrawVideoRef.current);
+          if (!descriptor) return;
+          const match = findBestMatch(descriptor, employees);
+          if (match) {
+            stopFaceWithdraw();
+            const emp = match.candidate;
+            // Funcionário identificado: preenche responsável e abre formulário de retirada
+            setMatchedEmployee({ id: emp.id, employee_id: emp.employee_id, name: emp.name });
+            setWithdrawResponsible(emp.name);
+            setWithdrawApplication("");
+            setWithdrawQty("1");
+            setWithdrawNeedsItem(false);
+            setFaceWithdrawDialogOpen(false);
+            setWithdrawDialogOpen(true);
+          }
+        }, 1000);
+      }, 100);
+    } catch {
+      setFaceWithdrawError("Erro ao acessar a câmera. Verifique as permissões.");
+    } finally {
+      setFaceWithdrawLoading(false);
+    }
+  };
+
+  const stopFaceWithdraw = () => {
+    if (faceWithdrawIntervalRef.current) {
+      window.clearInterval(faceWithdrawIntervalRef.current);
+      faceWithdrawIntervalRef.current = null;
+    }
+    if (faceWithdrawStreamRef.current) {
+      faceWithdrawStreamRef.current.getTracks().forEach((t) => t.stop());
+      faceWithdrawStreamRef.current = null;
+    }
+    setFaceWithdrawScanning(false);
+  };
+
+  // ── Face ID — Cadastro ──────────────────────────────────────
+
+  const startFaceEnroll = async () => {
+    if (!faceEnrollEmpId) {
+      toast.error("Selecione um funcionário");
+      return;
+    }
+    setFaceEnrollCapturing(true);
+    setFaceEnrollLoading(true);
+    try {
+      await loadFaceModels();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      faceEnrollStreamRef.current = stream;
+      setTimeout(() => {
+        if (faceEnrollVideoRef.current) {
+          faceEnrollVideoRef.current.srcObject = stream;
+          faceEnrollVideoRef.current.play().catch(() => {});
+        }
+      }, 100);
+    } catch {
+      toast.error("Erro ao acessar a câmera. Verifique as permissões.");
+      setFaceEnrollCapturing(false);
+    } finally {
+      setFaceEnrollLoading(false);
+    }
+  };
+
+  const stopFaceEnroll = () => {
+    if (faceEnrollStreamRef.current) {
+      faceEnrollStreamRef.current.getTracks().forEach((t) => t.stop());
+      faceEnrollStreamRef.current = null;
+    }
+    setFaceEnrollCapturing(false);
+  };
+
+  const captureFaceEnroll = async () => {
+    if (!faceEnrollVideoRef.current) return;
+    setFaceEnrollLoading(true);
+    try {
+      const descriptor = await getFaceDescriptor(faceEnrollVideoRef.current);
+      if (!descriptor) {
+        toast.error("Nenhum rosto detectado. Posicione o rosto no centro da câmera.");
+        return;
+      }
+      await updateEmployeeFace.mutateAsync({ id: faceEnrollEmpId, face_descriptor: descriptorToString(descriptor) });
+      const emp = employees.find((e) => e.id === faceEnrollEmpId);
+      toast.success(`Face ID cadastrado para ${emp?.name || "funcionário"}!`);
+      stopFaceEnroll();
+      setFaceEnrollDialogOpen(false);
+      setFaceEnrollEmpId("");
+    } catch {
+      toast.error("Erro ao cadastrar Face ID");
+    } finally {
+      setFaceEnrollLoading(false);
+    }
+  };
+
+  const removeFaceId = async (empId: string) => {
+    try {
+      await updateEmployeeFace.mutateAsync({ id: empId, face_descriptor: null });
+      toast.success("Face ID removido");
+    } catch {
+      toast.error("Erro ao remover Face ID");
+    }
+  };
+
+  // ── Face ID — Leitura ───────────────────────────────────────
+
+  const startFaceScan = async () => {
+    setFaceScanning(true);
+    setFaceScanLoading(true);
+    try {
+      await loadFaceModels();
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      faceScanStreamRef.current = stream;
+      setTimeout(() => {
+        if (faceScanVideoRef.current) {
+          faceScanVideoRef.current.srcObject = stream;
+          faceScanVideoRef.current.play().catch(() => {});
+        }
+        // Verifica periodicamente se algum rosto cadastrado corresponde
+        faceScanIntervalRef.current = window.setInterval(async () => {
+          if (!faceScanVideoRef.current) return;
+          const descriptor = await getFaceDescriptor(faceScanVideoRef.current);
+          if (!descriptor) return;
+          const match = findBestMatch(descriptor, employees);
+          if (match) {
+            const emp = match.candidate;
+            setMatchedEmployee({ id: emp.id, employee_id: emp.employee_id, name: emp.name });
+            stopFaceScan();
+            // Abre o mesmo diálogo de registro de retirada, com o responsável pré-preenchido
+            setWithdrawResponsible(emp.name);
+            setWithdrawApplication("");
+            setWithdrawQty("1");
+            setWithdrawNeedsItem(true);
+            setWithdrawItemId("");
+            setScannedItem(null);
+            setWithdrawDialogOpen(true);
+          }
+        }, 1000);
+      }, 100);
+    } catch {
+      toast.error("Erro ao acessar a câmera. Verifique as permissões.");
+      setFaceScanning(false);
+    } finally {
+      setFaceScanLoading(false);
+    }
+  };
+
+  const stopFaceScan = () => {
+    if (faceScanIntervalRef.current) {
+      window.clearInterval(faceScanIntervalRef.current);
+      faceScanIntervalRef.current = null;
+    }
+    if (faceScanStreamRef.current) {
+      faceScanStreamRef.current.getTracks().forEach((t) => t.stop());
+      faceScanStreamRef.current = null;
+    }
+    setFaceScanning(false);
+  };
 
   const handleAction = async (action: "add" | "remove") => {
     if (!scannedItem) return;
@@ -216,28 +421,38 @@ export default function QRCodeManager() {
         toast.error("Erro ao atualizar quantidade");
       }
     } else {
-      // Open withdrawal form dialog
+      // Fecha diálogo do item e abre identificação por Face ID
       setActionDialogOpen(false);
-      setWithdrawResponsible("");
-      setWithdrawApplication("");
-      setWithdrawQty("1");
-      setWithdrawDialogOpen(true);
+      setMatchedEmployee(null);
+      setFaceWithdrawDialogOpen(true);
+      // Inicia câmera automaticamente após render
+      setTimeout(() => startFaceWithdraw(), 150);
     }
   };
 
   const handleConfirmWithdrawal = async () => {
-    if (!scannedItem) return;
-    const qtyNum = parseInt(withdrawQty) || 1;
+    const targetItem = withdrawNeedsItem ? items.find((i) => i.id === withdrawItemId) : scannedItem;
+    if (!targetItem) {
+      toast.error("Selecione um item");
+      return;
+    }
+    if (!withdrawResponsible || !withdrawApplication) {
+      toast.error("Preencha responsável e aplicação");
+      return;
+    }
+    const qtyNum = parseDecimal(withdrawQty) || 1;
     try {
       await addWithdrawal.mutateAsync({
-        item_id: scannedItem.id,
+        item_id: targetItem.id,
         quantity_withdrawn: qtyNum,
         application: withdrawApplication,
         responsible: withdrawResponsible,
       });
-      toast.success(`-${qtyNum} retirado de "${scannedItem.item_name}"`);
+      toast.success(`-${qtyNum} retirado de "${targetItem.item_name}"`);
       setWithdrawDialogOpen(false);
       setScannedItem(null);
+      setWithdrawItemId("");
+      setMatchedEmployee(null);
     } catch {
       toast.error("Erro ao registrar retirada");
     }
@@ -256,12 +471,32 @@ export default function QRCodeManager() {
           <Camera className="h-6 w-6" />
           {scanning ? "Parar" : "Ler QR Code"}
         </Button>
+        <Button
+          onClick={faceScanning ? stopFaceScan : startFaceScan}
+          size="lg"
+          className="gap-3 text-lg px-8 py-6"
+          variant={faceScanning ? "destructive" : "default"}
+          disabled={faceScanLoading}
+        >
+          <ScanFace className="h-6 w-6" />
+          {faceScanning ? "Parar" : faceScanLoading ? "Carregando..." : "Ler Face ID"}
+        </Button>
       </div>
 
       {/* Scanner area */}
       {scanning && (
         <div className="flex justify-center">
           <div id={scannerContainerId} className="w-full max-w-md rounded-lg overflow-hidden border-2 border-primary" />
+        </div>
+      )}
+
+      {/* Face scan area */}
+      {faceScanning && (
+        <div className="flex flex-col items-center gap-2">
+          <div className="w-full max-w-md rounded-lg overflow-hidden border-2 border-primary relative">
+            <video ref={faceScanVideoRef} className="w-full" muted playsInline />
+          </div>
+          <p className="text-sm text-muted-foreground">Posicione o rosto no centro da câmera...</p>
         </div>
       )}
 
@@ -370,6 +605,41 @@ export default function QRCodeManager() {
         )}
       </div>
 
+      {/* Face ID enrollment section */}
+      <div className="rounded-lg border bg-card p-6 space-y-4">
+        <h3 className="text-lg font-semibold flex items-center gap-2">
+          <Fingerprint className="h-5 w-5" /> Cadastrar Face ID
+        </h3>
+        <div className="flex gap-3 items-end flex-wrap">
+          <div className="flex-1 min-w-[200px]">
+            <label className="text-xs text-muted-foreground">Funcionário</label>
+            <Select value={faceEnrollEmpId} onValueChange={setFaceEnrollEmpId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar funcionário" />
+              </SelectTrigger>
+              <SelectContent>
+                {employees.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.employee_id} — {e.name} {e.face_descriptor ? "✓" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button onClick={() => setFaceEnrollDialogOpen(true)} disabled={!faceEnrollEmpId} className="gap-2">
+            <ScanFace className="h-4 w-4" /> Cadastrar Face ID
+          </Button>
+          {employees.find((e) => e.id === faceEnrollEmpId)?.face_descriptor && (
+            <Button variant="outline" className="gap-2 text-destructive" onClick={() => removeFaceId(faceEnrollEmpId)}>
+              <Trash2 className="h-4 w-4" /> Remover Face ID
+            </Button>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Funcionários com Face ID cadastrado aparecem marcados com ✓ na lista. Ao usar "Ler Face ID", o sistema reconhece o funcionário e abre o registro de retirada.
+        </p>
+      </div>
+
       {/* Action Dialog after scanning */}
       <Dialog open={actionDialogOpen} onOpenChange={(open) => { setActionDialogOpen(open); if (!open) setScannedItem(null); }}>
         <DialogContent className="max-w-sm">
@@ -399,35 +669,113 @@ export default function QRCodeManager() {
                   onClick={() => handleAction("remove")}
                   disabled={updateItem.isPending}
                 >
-                  <Minus className="h-6 w-6" /> Retirar
+                  <ScanFace className="h-5 w-5" /> Retirar
                 </Button>
               </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Face ID — diálogo de identificação para retirada via QR */}
+      <Dialog open={faceWithdrawDialogOpen} onOpenChange={(open) => { if (!open) { stopFaceWithdraw(); setFaceWithdrawDialogOpen(false); } }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-center flex items-center justify-center gap-2">
+              <ScanFace className="h-5 w-5" /> Identificação por Face ID
+            </DialogTitle>
+            {scannedItem && (
+              <DialogDescription className="text-center">
+                Retirada de <strong>{scannedItem.item_name}</strong> — aproxime o rosto da câmera
+              </DialogDescription>
+            )}
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {faceWithdrawLoading && !faceWithdrawScanning && (
+              <div className="flex flex-col items-center gap-3 py-6">
+                <div className="h-10 w-10 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+                <p className="text-sm text-muted-foreground">Carregando modelos de reconhecimento...</p>
+              </div>
+            )}
+            {faceWithdrawError && (
+              <div className="text-center text-destructive text-sm py-4">{faceWithdrawError}</div>
+            )}
+            {faceWithdrawScanning && (
+              <div className="space-y-2">
+                <div className="w-full rounded-lg overflow-hidden border-2 border-primary relative">
+                  <video ref={faceWithdrawVideoRef} className="w-full" muted playsInline />
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-40 h-40 border-2 border-white/60 rounded-full" />
+                  </div>
+                </div>
+                <p className="text-xs text-center text-muted-foreground">Posicione o rosto no círculo e aguarde...</p>
+              </div>
+            )}
+            {!faceWithdrawScanning && !faceWithdrawLoading && !faceWithdrawError && (
+              <div className="flex justify-center py-4">
+                <Button onClick={startFaceWithdraw} className="gap-2">
+                  <Camera className="h-4 w-4" /> Tentar novamente
+                </Button>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" className="w-full" onClick={() => { stopFaceWithdraw(); setFaceWithdrawDialogOpen(false); }}>
+              Cancelar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+
       {/* Withdrawal Form Dialog */}
-      <Dialog open={withdrawDialogOpen} onOpenChange={(open) => { setWithdrawDialogOpen(open); if (!open) setScannedItem(null); }}>
+      <Dialog open={withdrawDialogOpen} onOpenChange={(open) => { setWithdrawDialogOpen(open); if (!open) { setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-center">Registrar Retirada</DialogTitle>
           </DialogHeader>
-          {scannedItem && (
-            <div className="space-y-4 py-2">
-              <div className="text-center space-y-1">
-                <p className="font-mono font-bold text-lg">{scannedItem.item_code}</p>
-                <p>{scannedItem.item_name}</p>
+          <div className="space-y-4 py-2">
+            {/* Item info (fluxo QR) */}
+            {!withdrawNeedsItem && scannedItem && (
+              <div className="rounded-md bg-muted px-4 py-3 text-center space-y-0.5">
+                <p className="font-mono font-bold text-base">{scannedItem.item_code}</p>
+                <p className="text-sm">{scannedItem.item_name}</p>
               </div>
+            )}
+            {/* Item selection (fluxo Face ID standalone) */}
+            {withdrawNeedsItem && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Quantidade</label>
-                <Input type="number" min="1" value={withdrawQty} onChange={(e) => setWithdrawQty(e.target.value)} placeholder="1" />
+                <label className="text-sm font-medium">Item</label>
+                <Select value={withdrawItemId} onValueChange={setWithdrawItemId}>
+                  <SelectTrigger><SelectValue placeholder="Selecionar item" /></SelectTrigger>
+                  <SelectContent>
+                    {items.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.item_code} — {i.item_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+            )}
+            {/* Funcionário identificado por Face ID */}
+            {matchedEmployee && (
+              <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
+                <ScanFace className="h-5 w-5 text-emerald-600 shrink-0" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Funcionário identificado</p>
+                  <p className="font-semibold text-sm">{matchedEmployee.employee_id} — {matchedEmployee.name}</p>
+                </div>
+              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Quantidade</label>
+              <Input type="text" inputMode="decimal" value={withdrawQty} onChange={(e) => setWithdrawQty(e.target.value)} placeholder="1" />
+            </div>
+            {/* Responsável manual apenas quando não identificado por Face ID */}
+            {!matchedEmployee && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Responsável</label>
                 <Select value={withdrawResponsible} onValueChange={setWithdrawResponsible}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecionar responsável" />
-                  </SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Selecionar responsável" /></SelectTrigger>
                   <SelectContent>
                     {employees.map((e) => (
                       <SelectItem key={e.id} value={e.name}>{e.employee_id} — {e.name} ({e.role})</SelectItem>
@@ -435,27 +783,62 @@ export default function QRCodeManager() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Aplicação</label>
-                <Select value={withdrawApplication} onValueChange={setWithdrawApplication}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecionar aplicação" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {applications.map((a) => (
-                      <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+            )}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Aplicação</label>
+              <Select value={withdrawApplication} onValueChange={setWithdrawApplication}>
+                <SelectTrigger><SelectValue placeholder="Selecionar aplicação" /></SelectTrigger>
+                <SelectContent>
+                  {applications.map((a) => (
+                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          )}
+          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setWithdrawDialogOpen(false); setScannedItem(null); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setWithdrawDialogOpen(false); setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); }}>Cancelar</Button>
             <Button onClick={handleConfirmWithdrawal} disabled={addWithdrawal.isPending}>Confirmar Retirada</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Face ID Enrollment Dialog */}
+      <Dialog open={faceEnrollDialogOpen} onOpenChange={(open) => { setFaceEnrollDialogOpen(open); if (!open) stopFaceEnroll(); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="text-center">Cadastrar Face ID</DialogTitle>
+            <DialogDescription className="text-center">
+              {employees.find((e) => e.id === faceEnrollEmpId)?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {!faceEnrollCapturing ? (
+              <div className="flex justify-center">
+                <Button onClick={startFaceEnroll} className="gap-2" disabled={faceEnrollLoading}>
+                  <Camera className="h-4 w-4" /> {faceEnrollLoading ? "Carregando..." : "Abrir Câmera"}
+                </Button>
+              </div>
+            ) : (
+              <>
+                <div className="w-full rounded-lg overflow-hidden border-2 border-primary">
+                  <video ref={faceEnrollVideoRef} className="w-full" muted playsInline />
+                </div>
+                <p className="text-xs text-center text-muted-foreground">Posicione o rosto no centro e clique em "Capturar"</p>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setFaceEnrollDialogOpen(false); stopFaceEnroll(); }}>Cancelar</Button>
+            {faceEnrollCapturing && (
+              <Button onClick={captureFaceEnroll} disabled={faceEnrollLoading} className="gap-2">
+                <Fingerprint className="h-4 w-4" /> {faceEnrollLoading ? "Processando..." : "Capturar"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
 
       {/* Size Selection Dialog */}
       <Dialog open={sizeDialogOpen} onOpenChange={setSizeDialogOpen}>
