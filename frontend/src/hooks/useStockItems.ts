@@ -145,7 +145,8 @@ export function useAddWithdrawal() {
       application: string;
       responsible: string;
       obra_id?: string;
-      user_email?: string;
+      user_email?: string | null;
+      created_at?: string;
     }) => api.post<WithdrawalWithItem>("/api/withdrawals", w),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["withdrawals"] });
