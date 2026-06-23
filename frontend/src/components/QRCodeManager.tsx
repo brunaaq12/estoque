@@ -73,7 +73,11 @@ export default function QRCodeManager() {
   const faceScanIntervalRef = useRef<number | null>(null);
   const [matchedEmployee, setMatchedEmployee] = useState<{ id: string; employee_id: string; name: string } | null>(null);
 
-  // Face ID — diálogo de identificação integrado ao fluxo de retirada por QR
+  // Busca no diálogo de retirada (Face ID flow)
+  const [itemSearch, setItemSearch] = useState("");
+  const [itemDropdownOpen, setItemDropdownOpen] = useState(false);
+  const [appSearch, setAppSearch] = useState("");
+  const [appDropdownOpen, setAppDropdownOpen] = useState(false);
   const [faceWithdrawDialogOpen, setFaceWithdrawDialogOpen] = useState(false);
   const [faceWithdrawScanning, setFaceWithdrawScanning] = useState(false);
   const [faceWithdrawLoading, setFaceWithdrawLoading] = useState(false);
@@ -262,8 +266,11 @@ export default function QRCodeManager() {
             setMatchedEmployee({ id: emp.id, employee_id: emp.employee_id, name: emp.name });
             setWithdrawResponsible(emp.name);
             setWithdrawApplication("");
+            setAppSearch("");
             setWithdrawQty("1");
             setWithdrawNeedsItem(false);
+            setItemDropdownOpen(false);
+            setAppDropdownOpen(false);
             setFaceWithdrawDialogOpen(false);
             setWithdrawDialogOpen(true);
           }
@@ -381,9 +388,13 @@ export default function QRCodeManager() {
             // Abre o mesmo diálogo de registro de retirada, com o responsável pré-preenchido
             setWithdrawResponsible(emp.name);
             setWithdrawApplication("");
+            setAppSearch("");
             setWithdrawQty("1");
             setWithdrawNeedsItem(true);
             setWithdrawItemId("");
+            setItemSearch("");
+            setItemDropdownOpen(false);
+            setAppDropdownOpen(false);
             setScannedItem(null);
             setWithdrawDialogOpen(true);
           }
@@ -730,12 +741,13 @@ export default function QRCodeManager() {
 
 
       {/* Withdrawal Form Dialog */}
-      <Dialog open={withdrawDialogOpen} onOpenChange={(open) => { setWithdrawDialogOpen(open); if (!open) { setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); } }}>
+      <Dialog open={withdrawDialogOpen} onOpenChange={(open) => { setWithdrawDialogOpen(open); if (!open) { setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); setItemSearch(""); setAppSearch(""); setItemDropdownOpen(false); setAppDropdownOpen(false); } }}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="text-center">Registrar Retirada</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+
             {/* Item info (fluxo QR) */}
             {!withdrawNeedsItem && scannedItem && (
               <div className="rounded-md bg-muted px-4 py-3 text-center space-y-0.5">
@@ -743,20 +755,56 @@ export default function QRCodeManager() {
                 <p className="text-sm">{scannedItem.item_name}</p>
               </div>
             )}
-            {/* Item selection (fluxo Face ID standalone) */}
+
+            {/* Item com busca (fluxo Face ID) */}
             {withdrawNeedsItem && (
-              <div className="space-y-2">
+              <div className="space-y-1">
                 <label className="text-sm font-medium">Item</label>
-                <Select value={withdrawItemId} onValueChange={setWithdrawItemId}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar item" /></SelectTrigger>
-                  <SelectContent>
-                    {items.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>{i.item_code} — {i.item_name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="relative">
+                  <Input
+                    placeholder="Buscar por código ou nome..."
+                    value={itemSearch}
+                    onChange={(e) => { setItemSearch(e.target.value); setWithdrawItemId(""); setItemDropdownOpen(true); }}
+                    onFocus={() => setItemDropdownOpen(true)}
+                    autoComplete="off"
+                  />
+                  {withdrawItemId && !itemDropdownOpen && (
+                    <p className="mt-1 text-xs text-emerald-600 font-medium">
+                      ✓ {items.find(i => i.id === withdrawItemId)?.item_code} — {items.find(i => i.id === withdrawItemId)?.item_name}
+                    </p>
+                  )}
+                  {itemDropdownOpen && itemSearch.trim().length > 0 && (
+                    <div className="absolute z-50 mt-1 w-full max-h-52 overflow-y-auto rounded-md border bg-popover shadow-md">
+                      {items
+                        .filter(i => {
+                          const q = itemSearch.toLowerCase();
+                          return i.item_code.toLowerCase().includes(q) || i.item_name.toLowerCase().includes(q);
+                        })
+                        .slice(0, 20)
+                        .map(i => (
+                          <button
+                            key={i.id}
+                            type="button"
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => { setWithdrawItemId(i.id); setItemSearch(`${i.item_code} — ${i.item_name}`); setItemDropdownOpen(false); }}
+                          >
+                            <span className="font-mono font-semibold">{i.item_code}</span>
+                            <span className="text-muted-foreground"> — {i.item_name}</span>
+                          </button>
+                        ))}
+                      {items.filter(i => {
+                        const q = itemSearch.toLowerCase();
+                        return i.item_code.toLowerCase().includes(q) || i.item_name.toLowerCase().includes(q);
+                      }).length === 0 && (
+                        <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum item encontrado</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+
             {/* Funcionário identificado por Face ID */}
             {matchedEmployee && (
               <div className="flex items-center gap-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
@@ -767,10 +815,12 @@ export default function QRCodeManager() {
                 </div>
               </div>
             )}
+
             <div className="space-y-2">
               <label className="text-sm font-medium">Quantidade</label>
               <Input type="text" inputMode="decimal" value={withdrawQty} onChange={(e) => setWithdrawQty(e.target.value)} placeholder="1" />
             </div>
+
             {/* Responsável manual apenas quando não identificado por Face ID */}
             {!matchedEmployee && (
               <div className="space-y-2">
@@ -785,20 +835,45 @@ export default function QRCodeManager() {
                 </Select>
               </div>
             )}
-            <div className="space-y-2">
+
+            {/* Aplicação com busca */}
+            <div className="space-y-1">
               <label className="text-sm font-medium">Aplicação</label>
-              <Select value={withdrawApplication} onValueChange={setWithdrawApplication}>
-                <SelectTrigger><SelectValue placeholder="Selecionar aplicação" /></SelectTrigger>
-                <SelectContent>
-                  {applications.map((a) => (
-                    <SelectItem key={a.id} value={a.name}>{a.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="relative">
+                <Input
+                  placeholder="Buscar ou digitar aplicação..."
+                  value={appSearch}
+                  onChange={(e) => { setAppSearch(e.target.value); setWithdrawApplication(e.target.value); setAppDropdownOpen(true); }}
+                  onFocus={() => setAppDropdownOpen(true)}
+                  onBlur={() => setTimeout(() => setAppDropdownOpen(false), 150)}
+                  autoComplete="off"
+                />
+                {appDropdownOpen && (
+                  <div className="absolute z-50 mt-1 w-full max-h-48 overflow-y-auto rounded-md border bg-popover shadow-md">
+                    {applications
+                      .filter(a => a.name.toLowerCase().includes(appSearch.toLowerCase()))
+                      .map(a => (
+                        <button
+                          key={a.id}
+                          type="button"
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent hover:text-accent-foreground transition-colors"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => { setWithdrawApplication(a.name); setAppSearch(a.name); setAppDropdownOpen(false); }}
+                        >
+                          {a.name}
+                        </button>
+                      ))}
+                    {applications.filter(a => a.name.toLowerCase().includes(appSearch.toLowerCase())).length === 0 && appSearch.trim() && (
+                      <p className="px-3 py-2 text-sm text-muted-foreground">Usar "<strong>{appSearch}</strong>" como aplicação</p>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
+
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => { setWithdrawDialogOpen(false); setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); }}>Cancelar</Button>
+            <Button variant="outline" onClick={() => { setWithdrawDialogOpen(false); setScannedItem(null); setMatchedEmployee(null); setWithdrawItemId(""); setItemSearch(""); setAppSearch(""); }}>Cancelar</Button>
             <Button onClick={handleConfirmWithdrawal} disabled={addWithdrawal.isPending}>Confirmar Retirada</Button>
           </DialogFooter>
         </DialogContent>
