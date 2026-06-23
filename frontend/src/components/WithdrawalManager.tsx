@@ -109,6 +109,7 @@ export default function WithdrawalManager() {
         responsible: responsibleInput.trim(),
         obra_id: selectedObraId || undefined,
         user_email: fullName || user?.email || null,
+        created_at: new Date().toISOString(),
       });
       setCodeInput(""); setNameInput(""); setSelectedItemId(""); setQty(""); setApplication(""); setResponsibleInput(""); setSelectedObraId("");
       setNewWithdrawalIdDialog(result.withdrawal_id);
