@@ -1,8 +1,8 @@
 import * as faceapi from "face-api.js";
 
-// Modelos carregados a partir de CDN (jsdelivr), evitando empacotar
-// os arquivos de pesos (~6MB) junto com o frontend.
-const MODEL_URL = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights";
+// Modelos servidos localmente a partir de public/models/
+// (os arquivos de peso estão em frontend/public/models/)
+const MODEL_URL = "/models";
 
 let modelsLoaded = false;
 let loadingPromise: Promise<void> | null = null;
