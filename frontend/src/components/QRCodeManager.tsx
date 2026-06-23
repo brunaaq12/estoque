@@ -447,6 +447,7 @@ export default function QRCodeManager() {
         quantity_withdrawn: qtyNum,
         application: withdrawApplication,
         responsible: withdrawResponsible,
+        created_at: new Date().toISOString(),
       });
       toast.success(`-${qtyNum} retirado de "${targetItem.item_name}"`);
       setWithdrawDialogOpen(false);
