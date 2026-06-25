@@ -246,7 +246,7 @@ export default function QRCodeManager() {
     setFaceWithdrawLoading(true);
     try {
       await loadFaceModels();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       faceWithdrawStreamRef.current = stream;
       setFaceWithdrawScanning(true);
       setTimeout(() => {
@@ -368,7 +368,7 @@ export default function QRCodeManager() {
     setFaceScanLoading(true);
     try {
       await loadFaceModels();
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       faceScanStreamRef.current = stream;
       setTimeout(() => {
         if (faceScanVideoRef.current) {
